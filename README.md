@@ -58,6 +58,46 @@ Or directly use the Rust binary:
 ./target/release/str_enum_flake8_plugin --path path/to/code
 ```
 
+## Usage
+
+### Basic Usage
+
+```
+str_enum_flake8_plugin --path /path/to/code
+```
+
+### Excluding Directories
+
+You can exclude specific directories using the `--exclude` option with a comma-separated list:
+
+```
+str_enum_flake8_plugin --path /path/to/code --exclude=test,migrations,frontend
+```
+
+By default, the tool already skips:
+- Directories starting with `.` (e.g., `.venv`, `.git`)
+- Directories starting with `_` (e.g., `__pycache__`)
+- Common build directories (`build`, `dist`, `frontend`)
+- Python virtual environments (`venv`, `env`)
+- Directories ending with `.egg-info`
+- Non-Python files (only `.py` files are processed, not `.pyc`, `.pyi`, etc.)
+
+### Help
+
+```
+str_enum_flake8_plugin --help
+```
+
+## Performance
+
+The tool is optimized for performance with parallel file processing and efficient string handling. On a medium-sized codebase, it typically runs in under 0.5 seconds.
+
+Key optimizations:
+- Parallel file processing using Rayon
+- Efficient directory traversal with WalkDir
+- Minimal memory footprint with string references
+- Smart directory filtering to skip irrelevant paths
+
 ## How it works
 
 The plugin uses AST parsing to find StrEnum classes and their members. For each member that has a string literal value (not auto()), it checks if the member name and value have the same case.

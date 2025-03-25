@@ -5,6 +5,7 @@ use clap::Parser;
 use rayon::prelude::*;
 use walkdir::{WalkDir, DirEntry};
 use lazy_static::lazy_static;
+use std::collections::HashSet;
 
 lazy_static! {
     static ref CLASS_RE: Regex = Regex::new(r"class\s+(\w+)\s*\(\s*(enum\.)?StrEnum\s*\)").unwrap();
@@ -16,6 +17,10 @@ struct Args {
     /// Directory path to scan for Python files
     #[arg(short, long)]
     path: String,
+
+    /// Comma-separated list of directory names to exclude
+    #[arg(short, long, value_delimiter = ',')]
+    exclude: Option<Vec<String>>,
 }
 
 struct ValidationError {
@@ -35,7 +40,13 @@ fn main() {
         std::process::exit(1);
     }
     
-    let errors = scan_directory(path);
+    // Convert exclude list to HashSet for faster lookups
+    let custom_excludes: HashSet<String> = args.exclude
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    
+    let errors = scan_directory(path, &custom_excludes);
     
     if errors.is_empty() {
         println!("No StrEnum inconsistencies found");
@@ -50,8 +61,13 @@ fn main() {
     }
 }
 
-fn should_skip_dir(entry: &DirEntry) -> bool {
+fn should_skip_dir(entry: &DirEntry, custom_excludes: &HashSet<String>) -> bool {
     let file_name = entry.file_name().to_string_lossy();
+    
+    // Check custom excludes first
+    if custom_excludes.contains(file_name.as_ref()) {
+        return true;
+    }
     
     // Skip directories starting with dot or underscore
     file_name.starts_with('.') || 
@@ -79,10 +95,10 @@ fn is_python_file(path: &Path) -> bool {
     }
 }
 
-fn scan_directory(path: &Path) -> Vec<ValidationError> {
+fn scan_directory(path: &Path, custom_excludes: &HashSet<String>) -> Vec<ValidationError> {
     WalkDir::new(path)
         .into_iter()
-        .filter_entry(|e| !e.path().is_dir() || !should_skip_dir(e))
+        .filter_entry(|e| !e.path().is_dir() || !should_skip_dir(e, custom_excludes))
         .filter_map(Result::ok)
         .filter(|entry| is_python_file(entry.path()))
         .par_bridge() // Process files in parallel
