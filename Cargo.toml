@@ -1,0 +1,11 @@
+[package]
+name = "str_enum_flake8_plugin"
+version = "0.1.0"
+edition = "2021"
+description = "A flake8 plugin to check that StrEnum names match their string values"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+
+[dependencies]
+regex = "1.10.2"
+clap = { version = "4.4.13", features = ["derive"] }
