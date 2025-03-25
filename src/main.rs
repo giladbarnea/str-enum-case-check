@@ -2,6 +2,13 @@ use std::path::Path;
 use std::fs;
 use regex::Regex;
 use clap::Parser;
+use rayon::prelude::*;
+use walkdir::{WalkDir, DirEntry};
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref CLASS_RE: Regex = Regex::new(r"class\s+(\w+)\s*\(\s*(enum\.)?StrEnum\s*\)").unwrap();
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -43,47 +50,61 @@ fn main() {
     }
 }
 
-fn scan_directory(path: &Path) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
+fn should_skip_dir(entry: &DirEntry) -> bool {
+    let file_name = entry.file_name().to_string_lossy();
     
-    if path.is_dir() {
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let entry_path = entry.path();
-                if entry_path.is_dir() {
-                    errors.extend(scan_directory(&entry_path));
-                } else if let Some(ext) = entry_path.extension() {
-                    if ext == "py" {
-                        if let Ok(content) = fs::read_to_string(&entry_path) {
-                            let file_errors = check_file(&content, entry_path.to_string_lossy().to_string());
-                            errors.extend(file_errors);
-                        }
-                    }
-                }
-            }
-        }
-    } else if path.is_file() && path.extension().map_or(false, |ext| ext == "py") {
-        if let Ok(content) = fs::read_to_string(path) {
-            let file_errors = check_file(&content, path.to_string_lossy().to_string());
-            errors.extend(file_errors);
-        }
+    // Skip directories starting with dot or underscore
+    file_name.starts_with('.') || 
+    file_name.starts_with('_') || 
+    // Skip specific directory names
+    file_name == "frontend" || 
+    file_name == "build" ||
+    file_name == "dist" ||
+    // Skip egg-info directories
+    file_name.ends_with(".egg-info") ||
+    // Skip common Python virtual environment directories
+    file_name == "venv" ||
+    file_name == "env" ||
+    file_name == "__pycache__"
+}
+
+fn is_python_file(path: &Path) -> bool {
+    if let Some(ext) = path.extension() {
+        let ext_str = ext.to_string_lossy();
+        // Only process .py files, skip .pyc, .pyi, .ipynb, etc.
+        ext_str == "py" && 
+        !path.to_string_lossy().ends_with(".py.typed")
+    } else {
+        false
     }
-    
-    errors
+}
+
+fn scan_directory(path: &Path) -> Vec<ValidationError> {
+    WalkDir::new(path)
+        .into_iter()
+        .filter_entry(|e| !e.path().is_dir() || !should_skip_dir(e))
+        .filter_map(Result::ok)
+        .filter(|entry| is_python_file(entry.path()))
+        .par_bridge() // Process files in parallel
+        .filter_map(|entry| {
+            let path = entry.path();
+            fs::read_to_string(path)
+                .ok()
+                .map(|content| check_file(&content, path.to_string_lossy().to_string()))
+        })
+        .flatten()
+        .collect()
 }
 
 fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
     let mut errors = Vec::new();
+    let lines: Vec<&str> = content.lines().collect();
     
-    // Regex to find StrEnum class definitions
-    let class_re = Regex::new(r"class\s+(\w+)\s*\(\s*(enum\.)?StrEnum\s*\)").unwrap();
-    
-    for (class_line_idx, line) in content.lines().enumerate() {
-        if let Some(captures) = class_re.captures(line) {
-            let enum_name = captures.get(1).unwrap().as_str().to_string();
+    for (class_line_idx, line) in lines.iter().enumerate() {
+        if let Some(captures) = CLASS_RE.captures(line) {
+            let enum_name = captures.get(1).unwrap().as_str();
             
             // Extract the class body
-            let lines: Vec<&str> = content.lines().collect();
             let class_body = extract_class_body(&lines, class_line_idx);
             
             // Process the class body
@@ -105,9 +126,9 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
                         errors.push(ValidationError {
                             file: file_path.clone(),
                             line: line_idx + 1,
-                            enum_name: enum_name.clone(),
-                            member_name,
-                            member_value,
+                            enum_name: enum_name.to_string(),
+                            member_name: member_name.to_string(),
+                            member_value: member_value.to_string(),
                         });
                     }
                 }
@@ -118,7 +139,7 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
     errors
 }
 
-fn parse_member_assignment(line: &str) -> Option<(String, String)> {
+fn parse_member_assignment(line: &str) -> Option<(&str, &str)> {
     // Split the line at the equals sign
     let parts: Vec<&str> = line.splitn(2, '=').collect();
     if parts.len() != 2 {
@@ -126,28 +147,29 @@ fn parse_member_assignment(line: &str) -> Option<(String, String)> {
     }
     
     // Extract the member name (trim whitespace)
-    let member_name = parts[0].trim().to_string();
+    let member_name = parts[0].trim();
     
     // Extract the value - look for a string literal
     let value_part = parts[1].trim();
     
     // Check for quoted string - handles both single and double quotes
-    if (value_part.starts_with('"') && value_part.contains("\"")) || 
-       (value_part.starts_with('\'') && value_part.contains("'")) {
+    if (value_part.starts_with('"') && value_part.contains('"')) || 
+       (value_part.starts_with('\'') && value_part.contains('\'')) {
         let quote_char = if value_part.starts_with('"') { '"' } else { '\'' };
-        let value_content = value_part
-            .chars()
-            .skip(1)  // Skip opening quote
-            .take_while(|&c| c != quote_char)
-            .collect::<String>();
         
-        return Some((member_name, value_content));
+        // Find the content between quotes more efficiently
+        if let Some(first_quote) = value_part.find(quote_char) {
+            if let Some(second_quote) = value_part[first_quote + 1..].find(quote_char) {
+                let value_content = &value_part[first_quote + 1..first_quote + second_quote + 1];
+                return Some((member_name, value_content));
+            }
+        }
     }
     
     None
 }
 
-fn extract_class_body(lines: &[&str], class_line_idx: usize) -> Vec<String> {
+fn extract_class_body<'a>(lines: &'a [&str], class_line_idx: usize) -> Vec<&'a str> {
     let mut body = Vec::new();
     let mut i = class_line_idx + 1;
     let mut indent_level = None;
@@ -175,7 +197,7 @@ fn extract_class_body(lines: &[&str], class_line_idx: usize) -> Vec<String> {
                 break;
             }
             
-            body.push(line.to_string());
+            body.push(line);
         }
         
         i += 1;

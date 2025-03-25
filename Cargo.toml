@@ -9,3 +9,6 @@ license = "MIT"
 [dependencies]
 regex = "1.10.2"
 clap = { version = "4.4.13", features = ["derive"] }
+rayon = "1.8.0"
+walkdir = "2.4.0"
+lazy_static = "1.4.0"
