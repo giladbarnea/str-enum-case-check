@@ -73,7 +73,7 @@ fn should_skip_dir(entry: &DirEntry, custom_excludes: &HashSet<String>) -> bool 
     file_name.starts_with('.') || 
     file_name.starts_with('_') || 
     // Skip specific directory names
-    file_name == "frontend" || 
+    file_name == "frontend" ||
     file_name == "build" ||
     file_name == "dist" ||
     // Skip egg-info directories

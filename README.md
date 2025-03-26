@@ -1,6 +1,6 @@
-# str_enum_flake8_plugin
+# str_enum_case_check
 
-A flake8 plugin and standalone tool to validate that Python StrEnum subclasses have consistent casing between the member names and their string values.
+A flake8 plugin and standalone tool to validate that Python `StrEnum` subclasses have consistent casing between the member names and their string values.
 
 ## Description
 
@@ -18,8 +18,14 @@ This would be valid:
 ```python
 class A(StrEnum):
     A = "A"  # Valid: name and value casing match
-    b = auto()  # Valid: using auto()
-    c = enum.auto()  # Valid: using qualified auto()
+```
+
+This would also be valid:
+
+```python
+class A(enum.StrEnum):
+    a = auto()       # Valid: using auto()
+    b = enum.auto()  # Valid: using qualified auto()
 ```
 
 The plugin correctly handles both direct inheritance from `StrEnum` and from `enum.StrEnum`.
@@ -49,13 +55,13 @@ cargo build --release
 Then you can use the Python wrapper script:
 
 ```
-./str_enum_check.py path/to/code
+./str_enum_case_check.py path/to/code
 ```
 
 Or directly use the Rust binary:
 
 ```
-./target/release/str_enum_flake8_plugin --path path/to/code
+./target/release/str_enum_case_check --path path/to/code
 ```
 
 ## Usage
@@ -63,7 +69,7 @@ Or directly use the Rust binary:
 ### Basic Usage
 
 ```
-str_enum_flake8_plugin --path /path/to/code
+str_enum_case_check --path /path/to/project
 ```
 
 ### Excluding Directories
@@ -71,13 +77,13 @@ str_enum_flake8_plugin --path /path/to/code
 You can exclude specific directories using the `--exclude` option with a comma-separated list:
 
 ```
-str_enum_flake8_plugin --path /path/to/code --exclude=test,migrations,frontend
+str_enum_case_check --path /path/to/project --exclude=test,migrations,frontend
 ```
 
 By default, the tool already skips:
 - Directories starting with `.` (e.g., `.venv`, `.git`)
 - Directories starting with `_` (e.g., `__pycache__`)
-- Common build directories (`build`, `dist`, `frontend`)
+- Common build directories (`build`, `dist`)
 - Python virtual environments (`venv`, `env`)
 - Directories ending with `.egg-info`
 - Non-Python files (only `.py` files are processed, not `.pyc`, `.pyi`, etc.)
@@ -85,26 +91,104 @@ By default, the tool already skips:
 ### Help
 
 ```
-str_enum_flake8_plugin --help
+str_enum_case_check --help
 ```
 
 ## Performance
 
-The tool is optimized for performance with parallel file processing and efficient string handling. On a medium-sized codebase, it typically runs in under 0.5 seconds.
-
-Key optimizations:
-- Parallel file processing using Rayon
-- Efficient directory traversal with WalkDir
-- Minimal memory footprint with string references
-- Smart directory filtering to skip irrelevant paths
-
-## How it works
-
-The plugin uses AST parsing to find StrEnum classes and their members. For each member that has a string literal value (not auto()), it checks if the member name and value have the same case.
+The tool is optimized for performance with parallel file processing and efficient string handling. On a medium-sized codebase, it typically runs in under 0.1~0.2 seconds.
 
 ## Error Codes
 
 - **SE001**: StrEnum member has inconsistent casing between name and value
+
+## Full Spec
+
+`StrEnum` subclasses whose members' names and values are different strings, regardless of case, are skipped.
+
+A `StrEnum` subclass is invalid if it matches any of the following patterns:
+
+1. Member name and value have different case.
+2. Member names have inconsistent case within the same `StrEnum` subclass.
+3. Member value is `auto()` and the member name is uppercase.
+
+### Examples
+
+#### Skipped
+```python
+# Skipped: name and value are different strings
+class A(StrEnum):
+    a = "Hello"
+
+# Skipped: only `StrEnum` subclasses are checked
+class A(Enum):
+    a = "a"
+```
+
+#### Invalid
+```python
+# Invalid: name and value have different case
+class A(StrEnum):
+    a = "A"
+```
+
+```python
+# Invalid: name and value have different case
+class A(StrEnum):
+    A = "a"
+```
+
+```python
+# Invalid: member names have inconsistent case
+class A(StrEnum):
+    a = "a"
+    B = "B"
+```
+
+```python
+# Invalid: member value is auto() and name is uppercase
+class A(StrEnum):
+    A = auto()
+```
+
+```python
+# Invalid: member names have inconsistent case
+class A(StrEnum):
+    A = "A"
+    b = auto()
+```
+
+#### Valid
+```python
+# Valid: name and value case match
+class A(StrEnum):
+    a = "a"
+```
+
+```python
+# Valid: name and value case match
+class A(StrEnum):
+    A = "A"
+```
+
+```python
+# Valid: member value is auto() and name is lowercase
+class A(StrEnum):
+    a = auto()
+```
+
+```python
+class BaseClass: ...
+
+ello = "ello"
+arth = "arth"
+
+class A(BaseClass, enum.StrEnum):
+    hello = "h" + ello
+    world = enum.auto()
+    earth = f"e{arth}
+```
+
 
 ## License
 

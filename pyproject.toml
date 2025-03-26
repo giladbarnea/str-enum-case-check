@@ -1,36 +1,38 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "str_enum_flake8_plugin"
+name = "str_enum_case_check"
 version = "0.1.0"
 description = "A flake8 plugin to check that StrEnum names match their string values"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "Gilad Barnea", email = "giladbrn@gmail.com"}
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Framework :: Flake8",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "flake8>=3.0.0",
 ]
 
-[project.entry-points."flake8.extension"]
-SE = "str_enum_flake8:Plugin"
-
 [project.scripts]
-str-enum-check = "str_enum_check:main"
+strenum-check = "strenum_check:main"
 
-[tool.ruff]
-select = ["E", "F", "B"]
-target-version = "py37"
+[project.entry-points."flake8.extension"]
+SE001 = "strenum_plugin:StrEnumPlugin"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]

@@ -245,7 +245,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "str_enum_flake8_plugin"
+name = "strenum_case"
 version = "0.1.0"
 dependencies = [
  "clap",

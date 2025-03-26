@@ -1,9 +1,9 @@
 [package]
-name = "str_enum_flake8_plugin"
+name = "str_enum_case_check"
 version = "0.1.0"
-edition = "2021"
+edition = "2025"
 description = "A flake8 plugin to check that StrEnum names match their string values"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Gilad Barnea <giladbrn@gmail.com>"]
 license = "MIT"
 
 [dependencies]

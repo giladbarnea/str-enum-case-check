@@ -1,25 +1,6 @@
-# Installing flake8-str-enum
+# Installing flake8-str-enum-case-check
 
-## Installation Methods
-
-### Using pip
-
-```bash
-pip install flake8-str-enum
-```
-
-### From Source
-
-1. Clone the repository:
-```bash
-git clone https://github.com/username/flake8-str-enum.git
-cd flake8-str-enum
-```
-
-2. Install in development mode:
-```bash
-pip install -e .
-```
+TODO
 
 ## Usage
 
