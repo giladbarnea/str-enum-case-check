@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use std::collections::HashSet;
 
 lazy_static! {
-    static ref CLASS_RE: Regex = Regex::new(r"class\s+(\w+)\s*\(\s*(enum\.)?StrEnum\s*\)").unwrap();
+    static ref CLASS_RE: Regex = Regex::new(r"class\s+(\w+)\s*\(\s*(?:.*?,\s*)?(enum\.)?StrEnum\s*(?:,\s*.*?)?\)").unwrap();
 }
 
 #[derive(Parser, Debug)]
@@ -123,29 +123,108 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
             // Extract the class body
             let class_body = extract_class_body(&lines, class_line_idx);
             
-            // Process the class body
+            // Track case consistency within the enum
+            let mut case_state: Option<bool> = None; // None = unset, Some(true) = uppercase, Some(false) = lowercase
+            let mut members_info = Vec::new();
+            
+            // First pass: collect all member information
             for (i, body_line) in class_body.iter().enumerate() {
                 let line_idx = class_line_idx + i + 1;
                 
-                // Skip any non-assignment lines and auto() calls
-                if !body_line.contains('=') || 
-                   body_line.contains("auto()") || 
-                   body_line.contains("enum.auto()") {
+                // Skip any non-assignment lines
+                if !body_line.contains('=') {
                     continue;
                 }
                 
-                // Parse the line manually instead of using regex
-                if let Some((member_name, member_value)) = parse_member_assignment(body_line) {
+                // Handle auto() case
+                let is_auto = body_line.contains("auto()") || body_line.contains("enum.auto()");
+                
+                // Parse the line to extract member name
+                if let Some((member_name, member_value_opt)) = if is_auto {
+                    let parts: Vec<&str> = body_line.splitn(2, '=').collect();
+                    if parts.len() > 0 {
+                        Some((parts[0].trim(), None))
+                    } else {
+                        None
+                    }
+                } else {
+                    parse_member_assignment(body_line).map(|(name, value)| (name, Some(value)))
+                } {
+                    // Determine if this member name is uppercase or lowercase
+                    let is_uppercase = member_name.chars().next().map_or(false, |c| c.is_uppercase());
                     
-                    // Check if member_name and member_value have the same casing
-                    if member_name != member_value && member_name.to_lowercase() == member_value.to_lowercase() {
+                    // Check for auto() with uppercase name - always invalid
+                    if is_auto && is_uppercase {
                         errors.push(ValidationError {
                             file: file_path.clone(),
                             line: line_idx + 1,
                             enum_name: enum_name.to_string(),
                             member_name: member_name.to_string(),
-                            member_value: member_value.to_string(),
+                            member_value: "auto()".to_string(),
                         });
+                    }
+                    
+                    // Update case state if this is a non-auto member with a direct string value
+                    if !is_auto && member_value_opt.is_some() {
+                        // Track the casing pattern for the enum
+                        if case_state.is_none() {
+                            case_state = Some(is_uppercase);
+                        } else if case_state != Some(is_uppercase) {
+                            // We've found inconsistency in member name casing
+                            errors.push(ValidationError {
+                                file: file_path.clone(),
+                                line: line_idx + 1,
+                                enum_name: enum_name.to_string(),
+                                member_name: member_name.to_string(),
+                                member_value: member_value_opt.unwrap_or("").to_string(),
+                            });
+                        }
+                    }
+                    
+                    // Save for second pass
+                    members_info.push((line_idx, member_name.to_string(), member_value_opt.map(ToString::to_string), is_auto));
+                }
+            }
+            
+            // Second pass: check for case differences between names and values
+            for (line_idx, member_name, member_value_opt, is_auto) in &members_info {
+                if *is_auto {
+                    continue; // Already checked in first pass
+                }
+                
+                if let Some(member_value) = member_value_opt {
+                    // Skip if name and value are completely different strings
+                    if member_name.to_lowercase() != member_value.to_lowercase() {
+                        continue;
+                    }
+                    
+                    // Check for case mismatch between name and value
+                    if member_name != member_value {
+                        errors.push(ValidationError {
+                            file: file_path.clone(),
+                            line: *line_idx + 1,
+                            enum_name: enum_name.to_string(),
+                            member_name: member_name.clone(),
+                            member_value: member_value.clone(),
+                        });
+                    }
+                }
+            }
+            
+            // Check for auto() members inconsistent with string value members
+            if let Some(is_uppercase_case) = case_state {
+                for (line_idx, member_name, _, is_auto) in &members_info {
+                    if *is_auto {
+                        let member_first_char_uppercase = member_name.chars().next().map_or(false, |c| c.is_uppercase());
+                        if member_first_char_uppercase != is_uppercase_case {
+                            errors.push(ValidationError {
+                                file: file_path.clone(),
+                                line: *line_idx + 1,
+                                enum_name: enum_name.to_string(),
+                                member_name: member_name.clone(),
+                                member_value: "auto()".to_string(),
+                            });
+                        }
                     }
                 }
             }
@@ -178,6 +257,25 @@ fn parse_member_assignment(line: &str) -> Option<(&str, &str)> {
             if let Some(second_quote) = value_part[first_quote + 1..].find(quote_char) {
                 let value_content = &value_part[first_quote + 1..first_quote + second_quote + 1];
                 return Some((member_name, value_content));
+            }
+        }
+    }
+    
+    // Handle string concatenation like "H" + ello or f"w{orld}"
+    // Look for patterns that indicate it's a string operation
+    if value_part.contains('"') || value_part.contains('\'') || 
+       value_part.contains("f\"") || value_part.contains("f'") ||
+       value_part.contains(" + ") {
+        
+        // Check first character of the expression for case hint
+        // For expressions like "H" + ello, check the first quoted character
+        if let Some(first_quote_idx) = value_part.find('"').or_else(|| value_part.find('\'')) {
+            if first_quote_idx + 1 < value_part.len() {
+                let char_after_quote = value_part[first_quote_idx + 1..].chars().next().unwrap_or(' ');
+                if char_after_quote.is_alphabetic() {
+                    // Return the member name and just the initial character for case checking
+                    return Some((member_name, &value_part[first_quote_idx + 1..first_quote_idx + 2]));
+                }
             }
         }
     }
