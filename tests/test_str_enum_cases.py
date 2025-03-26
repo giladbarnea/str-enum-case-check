@@ -121,7 +121,7 @@ class MultiInherit(BaseClass, StrEnum):
 
 def test_str_enum_cases():
     """Test all the StrEnum case validation scenarios."""
-    from str_enum_case_check_flake8 import StrEnumVisitor
+    from str_enum_case_check.str_enum_case_check_flake8 import StrEnumVisitor
 
     # Test all cases defined within this file
     with open(__file__, "r") as f:

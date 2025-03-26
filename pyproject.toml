@@ -1,13 +1,16 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["str_enum_case_check"]
 
 [project]
 name = "str_enum_case_check"
 version = "0.1.0"
 description = "A flake8 plugin to check that StrEnum names match their string values"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Gilad Barnea", email = "giladbrn@gmail.com"}
@@ -27,10 +30,10 @@ dependencies = [
 ]
 
 [project.scripts]
-strenum-check = "strenum_check:main"
+str-enum-case-check = "str_enum_case_check.str_enum_case_check:main"
 
 [project.entry-points."flake8.extension"]
-SE001 = "strenum_plugin:StrEnumPlugin"
+SE001 = "str_enum_case_check.str_enum_case_check_flake8:StrEnumPlugin"
 
 [dependency-groups]
 dev = [
