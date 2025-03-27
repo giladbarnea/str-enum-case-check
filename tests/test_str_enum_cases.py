@@ -152,7 +152,12 @@ def test_str_enum_cases():
     errors = [
         line
         for line in result.stdout.splitlines()
-        if "StrEnum" in line and "inconsistent casing" in line
+        if "StrEnum" in line
+        and (
+            "inconsistent casing" in line
+            or "inconsistent member naming" in line
+            or "uppercase member" in line
+        )
     ]
 
     print(f"Found {len(errors)} errors:", errors)
@@ -205,7 +210,12 @@ def test_str_enum_cases():
     multi_errors = [
         line
         for line in multi_result.stdout.splitlines()
-        if "StrEnum" in line and "inconsistent casing" in line
+        if "StrEnum" in line
+        and (
+            "inconsistent casing" in line
+            or "inconsistent member naming" in line
+            or "uppercase member" in line
+        )
     ]
     assert any("MultiInherit" in error for error in multi_errors), (
         "Failed to detect invalid MultiInherit class"

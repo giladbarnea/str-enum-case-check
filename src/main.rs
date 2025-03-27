@@ -29,6 +29,17 @@ struct ValidationError {
     enum_name: String,
     member_name: String,
     member_value: String,
+    error_type: ErrorType,
+}
+
+#[derive(Debug, PartialEq)]
+enum ErrorType {
+    // Member name and value have different cases (e.g., "a" = "A")
+    NameValueMismatch,
+    // Members within enum have inconsistent naming (e.g., "a" and "B" in same enum)
+    InconsistentNaming,
+    // Auto() with uppercase names (e.g., "A = auto()")
+    InvalidAutoCase,
 }
 
 fn main() {
@@ -52,10 +63,26 @@ fn main() {
         println!("No StrEnum inconsistencies found");
     } else {
         for error in errors {
-            println!(
-                "{}:{}:1: StrEnum '{}' has member '{}' with inconsistent casing: value is '{}'",
-                error.file, error.line, error.enum_name, error.member_name, error.member_value
-            );
+            match error.error_type {
+                ErrorType::NameValueMismatch => {
+                    println!(
+                        "{}:{}:1: StrEnum '{}' has member '{}' with inconsistent casing: value is '{}'",
+                        error.file, error.line, error.enum_name, error.member_name, error.member_value
+                    );
+                },
+                ErrorType::InconsistentNaming => {
+                    println!(
+                        "{}:{}:1: StrEnum '{}' has inconsistent member naming: '{}' differs from predominant style ({})",
+                        error.file, error.line, error.enum_name, error.member_name, error.member_value
+                    );
+                },
+                ErrorType::InvalidAutoCase => {
+                    println!(
+                        "{}:{}:1: StrEnum '{}' has uppercase member '{}' with auto() value which should be lowercase",
+                        error.file, error.line, error.enum_name, error.member_name
+                    );
+                }
+            }
         }
         std::process::exit(1);
     }
@@ -126,13 +153,16 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
             // Track case consistency within the enum
             let mut case_state: Option<bool> = None; // None = unset, Some(true) = uppercase, Some(false) = lowercase
             let mut members_info = Vec::new();
+            let mut uppercase_count = 0;
+            let mut lowercase_count = 0;
             
             // First pass: collect all member information
             for (i, body_line) in class_body.iter().enumerate() {
                 let line_idx = class_line_idx + i + 1;
                 
-                // Skip any non-assignment lines
-                if !body_line.contains('=') {
+                // Skip any non-assignment lines or commented lines
+                let trimmed_line = body_line.trim();
+                if !trimmed_line.contains('=') || trimmed_line.starts_with('#') {
                     continue;
                 }
                 
@@ -153,6 +183,13 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
                     // Determine if this member name is uppercase or lowercase
                     let is_uppercase = member_name.chars().next().map_or(false, |c| c.is_uppercase());
                     
+                    // Update counts
+                    if is_uppercase {
+                        uppercase_count += 1;
+                    } else {
+                        lowercase_count += 1;
+                    }
+                    
                     // Check for auto() with uppercase name - always invalid
                     if is_auto && is_uppercase {
                         errors.push(ValidationError {
@@ -161,6 +198,7 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
                             enum_name: enum_name.to_string(),
                             member_name: member_name.to_string(),
                             member_value: "auto()".to_string(),
+                            error_type: ErrorType::InvalidAutoCase,
                         });
                     }
                     
@@ -171,12 +209,20 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
                             case_state = Some(is_uppercase);
                         } else if case_state != Some(is_uppercase) {
                             // We've found inconsistency in member name casing
+                            // Determine the predominant style
+                            let predominant_style = if uppercase_count > lowercase_count { 
+                                "UPPERCASE" 
+                            } else { 
+                                "lowercase" 
+                            };
+                            
                             errors.push(ValidationError {
                                 file: file_path.clone(),
                                 line: line_idx + 1,
                                 enum_name: enum_name.to_string(),
                                 member_name: member_name.to_string(),
-                                member_value: member_value_opt.unwrap_or("").to_string(),
+                                member_value: predominant_style.to_string(),
+                                error_type: ErrorType::InconsistentNaming,
                             });
                         }
                     }
@@ -206,6 +252,7 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
                             enum_name: enum_name.to_string(),
                             member_name: member_name.clone(),
                             member_value: member_value.clone(),
+                            error_type: ErrorType::NameValueMismatch,
                         });
                     }
                 }
@@ -223,6 +270,7 @@ fn check_file(content: &str, file_path: String) -> Vec<ValidationError> {
                                 enum_name: enum_name.to_string(),
                                 member_name: member_name.clone(),
                                 member_value: "auto()".to_string(),
+                                error_type: ErrorType::InvalidAutoCase,
                             });
                         }
                     }
