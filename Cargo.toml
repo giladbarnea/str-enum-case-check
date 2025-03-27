@@ -1,7 +1,7 @@
 [package]
 name = "str_enum_case_check"
 version = "0.1.0"
-edition = "2025"
+edition = "2021"
 description = "A flake8 plugin to check that StrEnum names match their string values"
 authors = ["Gilad Barnea <giladbrn@gmail.com>"]
 license = "MIT"

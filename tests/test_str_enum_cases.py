@@ -121,55 +121,95 @@ class MultiInherit(BaseClass, StrEnum):
 
 def test_str_enum_cases():
     """Test all the StrEnum case validation scenarios."""
-    from str_enum_case_check.str_enum_case_check_flake8 import StrEnumVisitor
+    import sys
+    import os
+    import tempfile
+    import subprocess
+    import contextlib
+    from io import StringIO
 
-    # Test all cases defined within this file
-    with open(__file__, "r") as f:
-        tree = ast.parse(f.read())
+    # Create a temporary file with our test code
+    with tempfile.NamedTemporaryFile(
+        suffix=".py", mode="w+", delete=False
+    ) as temp_file:
+        with open(__file__, "r") as f:
+            temp_file.write(f.read())
+        temp_file_path = temp_file.name
 
-    visitor = StrEnumVisitor()
-    visitor.visit(tree)
+    # Get the path to the binary (assuming it's in target/debug)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    binary_path = os.path.join(project_root, "target", "debug", "str_enum_case_check")
 
-    print(f"Found {len(visitor.errors)} errors:", visitor.errors)
+    # Run the binary directly
+    result = subprocess.run(
+        [binary_path, "--path", temp_file_path],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-    # Expected invalid cases
+    # Parse the output to get the errors
+    errors = [
+        line
+        for line in result.stdout.splitlines()
+        if "StrEnum" in line and "inconsistent casing" in line
+    ]
+
+    print(f"Found {len(errors)} errors:", errors)
+
+    # Expected invalid classes
     invalid_classes = [
         "InvalidDifferentCase",
         "InvalidDifferentCaseReverse",
         "InvalidInconsistentNames",
         "InvalidUpperAuto",
+        "InvalidUpperQualifiedAuto",
         "InvalidMixedWithAuto",
+        "InvalidComplexValues",
         "NestedEnum",
     ]
 
     # Verify all invalid cases are detected
     for class_name in invalid_classes:
-        assert any(
-            class_name in err[2] for err in visitor.errors
-        ), f"Failed to detect invalid class: {class_name}"
+        assert any(class_name in error for error in errors), (
+            f"Failed to detect invalid class: {class_name}"
+        )
 
     # Verify valid/skipped cases are NOT flagged
     skipped_classes = [
         "SkippedDifferentStrings",
         "SkippedNotStrEnum",
-        "SkippedComplexValues",
         "ValidLowercase",
         "ValidUppercase",
         "ValidLowercaseAuto",
+        "ValidComplexValues",
     ]
 
     for class_name in skipped_classes:
-        assert not any(
-            class_name in err[2] for err in visitor.errors
-        ), f"Incorrectly flagged valid/skipped class: {class_name}"
+        assert not any(class_name in error for error in errors), (
+            f"Incorrectly flagged valid/skipped class: {class_name}"
+        )
 
-    # Test multiple inheritance
-    tree1 = ast.parse(code_multi_inherit)
-    visitor1 = StrEnumVisitor()
-    visitor1.visit(tree1)
-    assert any(
-        "MultiInherit" in err[2] for err in visitor1.errors
-    ), "Failed to detect invalid MultiInherit class"
+    # Create a temporary file for multiple inheritance test
+    with tempfile.NamedTemporaryFile(
+        suffix=".py", mode="w+", delete=False
+    ) as multi_file:
+        multi_file.write(code_multi_inherit)
+        multi_path = multi_file.name
+
+    # Test multiple inheritance separately
+    multi_result = subprocess.run(
+        [binary_path, "--path", multi_path], capture_output=True, text=True, check=False
+    )
+
+    multi_errors = [
+        line
+        for line in multi_result.stdout.splitlines()
+        if "StrEnum" in line and "inconsistent casing" in line
+    ]
+    assert any("MultiInherit" in error for error in multi_errors), (
+        "Failed to detect invalid MultiInherit class"
+    )
 
     print("All test cases passed!")
 

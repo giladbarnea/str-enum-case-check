@@ -245,7 +245,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strenum_case"
+name = "str_enum_case_check"
 version = "0.1.0"
 dependencies = [
  "clap",
