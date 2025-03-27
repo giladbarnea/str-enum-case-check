@@ -88,6 +88,17 @@ By default, the tool already skips:
 - Directories ending with `.egg-info`
 - Non-Python files (only `.py` files are processed, not `.pyc`, `.pyi`, etc.)
 
+### Configuration via pyproject.toml
+
+The tool also supports configuration via `pyproject.toml` in the project directory. Create a section `[tool.str-enum-case-check]` with configuration options:
+
+```toml
+[tool.str-enum-case-check]
+exclude = ["ignored_file_name.py", "ignored_dir_name"]
+```
+
+Command-line arguments take precedence over configuration from pyproject.toml, and both sources of excludes are combined.
+
 ### Help
 
 ```

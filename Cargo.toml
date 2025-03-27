@@ -12,3 +12,5 @@ clap = { version = "4.4.13", features = ["derive"] }
 rayon = "1.8.0"
 walkdir = "2.4.0"
 lazy_static = "1.4.0"
+toml = "0.8.2"
+serde = { version = "1.0", features = ["derive"] }

@@ -221,8 +221,94 @@ def test_str_enum_cases():
         "Failed to detect invalid MultiInherit class"
     )
 
+    # Clean up
+    os.unlink(temp_file_path)
+    os.unlink(multi_path)
+
     print("All test cases passed!")
+
+
+def test_pyproject_toml_config():
+    """Test reading configuration from pyproject.toml."""
+    import os
+    import tempfile
+    import subprocess
+
+    # Create a temporary directory structure
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create a pyproject.toml file with exclude configuration
+        pyproject_content = """
+[tool.str-enum-case-check]
+exclude = ["excluded_module.py", "excluded_dir"]
+"""
+        with open(os.path.join(temp_dir, "pyproject.toml"), "w") as f:
+            f.write(pyproject_content)
+
+        # Create a module that should be excluded
+        excluded_module_content = """
+from enum import StrEnum
+
+class ExcludedEnum(StrEnum):
+    a = "A"  # This would be an error, but module is excluded
+"""
+        with open(os.path.join(temp_dir, "excluded_module.py"), "w") as f:
+            f.write(excluded_module_content)
+
+        # Create an excluded directory with an invalid file
+        excluded_dir = os.path.join(temp_dir, "excluded_dir")
+        os.makedirs(excluded_dir, exist_ok=True)
+        with open(os.path.join(excluded_dir, "enum_file.py"), "w") as f:
+            f.write("""
+from enum import StrEnum
+
+class ExcludedDirEnum(StrEnum):
+    a = "A"  # This would be an error, but directory is excluded
+""")
+
+        # Create a module that should NOT be excluded
+        included_module_content = """
+from enum import StrEnum
+
+class IncludedEnum(StrEnum):
+    a = "A"  # This should be detected as an error
+"""
+        with open(os.path.join(temp_dir, "included_module.py"), "w") as f:
+            f.write(included_module_content)
+
+        # Get the path to the binary (assuming it's in target/debug)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        binary_path = os.path.join(
+            project_root, "target", "debug", "str_enum_case_check"
+        )
+
+        # Run the binary on the temp directory
+        result = subprocess.run(
+            [binary_path, "--path", temp_dir],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # Parse the output to get the errors
+        errors = [line for line in result.stdout.splitlines() if "StrEnum" in line]
+
+        # Check that only the included module was detected
+        assert any(
+            "IncludedEnum" in error for error in errors
+        ), "Failed to detect errors in included module"
+
+        # Check that excluded modules were not detected
+        assert not any(
+            "ExcludedEnum" in error for error in errors
+        ), "Incorrectly checked excluded module"
+
+        assert not any(
+            "ExcludedDirEnum" in error for error in errors
+        ), "Incorrectly checked file in excluded directory"
+
+        print("Pyproject.toml configuration test passed!")
 
 
 if __name__ == "__main__":
     test_str_enum_cases()
+    test_pyproject_toml_config()

@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use walkdir::{WalkDir, DirEntry};
 use lazy_static::lazy_static;
 use std::collections::HashSet;
+use serde::Deserialize;
 
 lazy_static! {
     static ref CLASS_RE: Regex = Regex::new(r"class\s+(\w+)\s*\(\s*(?:.*?,\s*)?(enum\.)?StrEnum\s*(?:,\s*.*?)?\)").unwrap();
@@ -19,7 +20,25 @@ struct Args {
     path: String,
 
     /// Comma-separated list of directory names to exclude
+    /// Can also be configured via [tool.str-enum-case-check] section in pyproject.toml
     #[arg(short, long, value_delimiter = ',')]
+    exclude: Option<Vec<String>>,
+}
+
+// Structures for parsing pyproject.toml
+#[derive(Deserialize, Debug, Default)]
+struct PyprojectToml {
+    tool: Option<ToolSection>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+struct ToolSection {
+    #[serde(rename = "str-enum-case-check")]
+    str_enum_case_check: Option<StrEnumCaseCheckConfig>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+struct StrEnumCaseCheckConfig {
     exclude: Option<Vec<String>>,
 }
 
@@ -51,13 +70,27 @@ fn main() {
         std::process::exit(1);
     }
     
-    // Convert exclude list to HashSet for faster lookups
-    let custom_excludes: HashSet<String> = args.exclude
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    // Try to read pyproject.toml for configuration
+    let pyproject_excludes = read_pyproject_toml_config(path);
     
-    let errors = scan_directory(path, &custom_excludes);
+    // Merge command-line excludes with pyproject.toml excludes
+    let mut all_excludes = HashSet::new();
+    
+    // Add pyproject.toml excludes if found
+    if let Some(excludes) = pyproject_excludes {
+        for exclude in excludes {
+            all_excludes.insert(exclude);
+        }
+    }
+    
+    // Add command-line excludes
+    if let Some(cli_excludes) = args.exclude {
+        for exclude in cli_excludes {
+            all_excludes.insert(exclude);
+        }
+    }
+    
+    let errors = scan_directory(path, &all_excludes);
     
     if errors.is_empty() {
         println!("No StrEnum inconsistencies found");
@@ -85,6 +118,38 @@ fn main() {
             }
         }
         std::process::exit(1);
+    }
+}
+
+/// Read the pyproject.toml file from the target directory and extract str-enum-case-check settings
+fn read_pyproject_toml_config(project_path: &Path) -> Option<Vec<String>> {
+    let pyproject_path = project_path.join("pyproject.toml");
+    
+    if !pyproject_path.exists() {
+        return None;
+    }
+    
+    match fs::read_to_string(&pyproject_path) {
+        Ok(content) => {
+            match toml::from_str::<PyprojectToml>(&content) {
+                Ok(config) => {
+                    if let Some(tool) = &config.tool {
+                        if let Some(str_enum_config) = &tool.str_enum_case_check {
+                            return str_enum_config.exclude.clone();
+                        }
+                    }
+                    None
+                },
+                Err(e) => {
+                    eprintln!("Warning: Failed to parse pyproject.toml: {}", e);
+                    None
+                }
+            }
+        },
+        Err(e) => {
+            eprintln!("Warning: Failed to read pyproject.toml: {}", e);
+            None
+        }
     }
 }
 
@@ -122,12 +187,38 @@ fn is_python_file(path: &Path) -> bool {
     }
 }
 
+/// Check if a file should be excluded based on the custom excludes list
+fn should_exclude_file(path: &Path, custom_excludes: &HashSet<String>) -> bool {
+    // Check if the filename is in the excludes list
+    if let Some(file_name) = path.file_name() {
+        let file_name_str = file_name.to_string_lossy();
+        if custom_excludes.contains(file_name_str.as_ref()) {
+            return true;
+        }
+    }
+    
+    // Also check if any parent directory is in the excludes list
+    for ancestor in path.ancestors().skip(1) {  // Skip the file itself
+        if let Some(dir_name) = ancestor.file_name() {
+            let dir_name_str = dir_name.to_string_lossy();
+            if custom_excludes.contains(dir_name_str.as_ref()) {
+                return true;
+            }
+        }
+    }
+    
+    false
+}
+
 fn scan_directory(path: &Path, custom_excludes: &HashSet<String>) -> Vec<ValidationError> {
     WalkDir::new(path)
         .into_iter()
         .filter_entry(|e| !e.path().is_dir() || !should_skip_dir(e, custom_excludes))
         .filter_map(Result::ok)
-        .filter(|entry| is_python_file(entry.path()))
+        .filter(|entry| {
+            let path = entry.path();
+            is_python_file(path) && !should_exclude_file(path, custom_excludes)
+        })
         .par_bridge() // Process files in parallel
         .filter_map(|entry| {
             let path = entry.path();

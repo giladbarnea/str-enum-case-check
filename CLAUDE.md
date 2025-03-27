@@ -23,7 +23,7 @@ Done 100% via `cargo`.
 - Supports --exclude=FILE_OR_DIR_NAME[,FILE_OR_DIR_NAME...]
 
 ## Project Structure
-- Rust implementation with Python test cases: obvious given that the tool's purpose is to parse Python with Rust
+- Rust implementation (in `main.rs`) with Python test cases (in `tests/`): obvious given that the tool's purpose is to parse Python with Rust
 
 ## Development
 - Performance is critical: has to be less than 200ms execution even on large codebases
